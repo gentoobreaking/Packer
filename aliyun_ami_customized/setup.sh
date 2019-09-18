@@ -1,0 +1,261 @@
+#!/bin/bash
+
+#sudo su -
+
+echo "
+Soruce AMI: 
+Ubuntu Server 18.04 LTS (HVM), SSD Volume Type - ami-07ad4b1c3af1ea214
+"
+
+Update_Packages()
+{
+echo " - update all packages"
+apt-get -y update
+
+echo " - basic packages"
+echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+echo ' - install 1'
+apt-get -y install openssh-server net-tools wget curl bash git 
+echo ' - install 2'
+apt-get -y install dialog apt-utils sudo vim
+echo ' - install 3'
+apt-get -y install python supervisor auditd audispd-plugins sysstat awscli
+apt-get clean
+}
+
+Setup_sysstat()
+{
+sed -i 's|ENABLED="false"|ENABLED="true"|g' /etc/default/sysstat
+systemctl enable sysstat
+systemctl start sysstat
+}
+
+Setup_supervisor()
+{
+echo "-  setup for supervisor"
+echo -e '[program:sshd]\ncommand=/usr/sbin/sshd -D' > /etc/supervisor/conf.d/sshd
+cat /etc/supervisor/conf.d/sshd
+}
+
+Setup_TimeZone()
+{
+echo "- change timezone to Asia/Taipei"
+timedatectl set-timezone Asia/Taipei
+timedatectl
+
+echo "- setup time server"
+apt-get -y install chrony
+apt-get clean
+
+echo "- ensure service startup"
+systemctl restart chrony.service
+systemctl enable chrony.service
+systemctl restart supervisor.service
+systemctl enable supervisor.service
+
+echo " - ensure time sync"
+chronyc sources -v
+chronyc tracking
+}
+
+Setup_Users()
+{
+echo " - add groups: system_engineer , developer_platform"
+addgroup --gid 1001 system_engineer
+addgroup --gid 1002 developer_platform
+
+echo " - add user for SE account"
+adduser david --shell /bin/bash --gid 1001 --uid 1001 --disabled-password --gecos ""
+adduser tony --shell /bin/bash --gid 1001 --uid 1002 --disabled-password --gecos ""
+adduser zach --shell /bin/bash --gid 1001 --uid 1003 --disabled-password --gecos ""
+adduser relk --shell /bin/bash --gid 1001 --uid 1004 --disabled-password --gecos ""
+#adduser tommy --shell /bin/bash --gid 1001 --uid 1005 --disabled-password --gecos ""
+adduser andy --shell /bin/bash --gid 1001 --uid 1006 --disabled-password --gecos ""
+adduser andyhuang --shell /bin/bash --gid 1001 --uid 1007 --disabled-password --gecos ""
+
+#echo " - add user Platform account"
+#adduser platform --shell /bin/bash --gid 1002 --uid 1100 --disabled-password --gecos ""
+
+#echo " - add user Dev-Platform account"
+#adduser hungwen --shell /bin/bash --gid 1002 --uid 1102 --disabled-password --gecos ""
+#adduser eric    --shell /bin/bash --gid 1002 --uid 1103 --disabled-password --gecos ""
+
+# SSH Public Key
+cd /tmp/
+
+mkdir /home/david/.ssh ; chmod 700 /home/david/.ssh
+cat ./ssh/david.key > /home/david/.ssh/authorized_keys
+chmod 600 /home/david/.ssh/authorized_keys ; chown -R david:system_engineer /home/david/.ssh
+
+mkdir /home/tony/.ssh ; chmod 700 /home/tony/.ssh
+cat ./ssh/tony.key > /home/tony/.ssh/authorized_keys
+chmod 600 /home/tony/.ssh/authorized_keys ; chown -R tony:system_engineer /home/tony/.ssh
+
+mkdir /home/zach/.ssh ; chmod 700 /home/zach/.ssh
+cat ./ssh/zach.key > /home/zach/.ssh/authorized_keys
+chmod 600 /home/zach/.ssh/authorized_keys ; chown -R zach:system_engineer /home/zach/.ssh
+
+mkdir /home/relk/.ssh ; chmod 700 /home/relk/.ssh
+cat ./ssh/relk.key > /home/relk/.ssh/authorized_keys
+chmod 600 /home/relk/.ssh/authorized_keys ; chown -R relk:system_engineer /home/relk/.ssh
+
+#mkdir /home/tommy/.ssh ; chmod 700 /home/tommy/.ssh
+#cat ./ssh/tommy.key > /home/tommy/.ssh/authorized_keys
+#chmod 600 /home/tommy/.ssh/authorized_keys ; chown -R tommy:system_engineer /home/tommy/.ssh
+
+mkdir /home/andy/.ssh ; chmod 700 /home/andy/.ssh
+cat ./ssh/andy.key > /home/andy/.ssh/authorized_keys
+chmod 600 /home/andy/.ssh/authorized_keys ; chown -R andy:system_engineer /home/andy/.ssh
+
+mkdir /home/andyhuang/.ssh ; chmod 700 /home/andyhuang/.ssh
+cat ./ssh/andyhuang.key > /home/andyhuang/.ssh/authorized_keys
+chmod 600 /home/andyhuang/.ssh/authorized_keys ; chown -R andyhuang:system_engineer /home/andyhuang/.ssh
+
+echo " - sudo setting."
+sed -i '/^%admin/d' /etc/sudoers
+sed -i '/^%sudo/d' /etc/sudoers
+
+echo 'Defaults env_reset
+Defaults mail_badpass
+Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+
+root ALL=(ALL:ALL) ALL
+ubuntu ALL=(ALL:ALL) NOPASSWD:ALL
+
+Cmnd_Alias OPERATORS = /usr/bin/docker * , /usr/bin/docker-compose *
+
+%system_engineer ALL=(ALL) NOPASSWD:ALL
+%developer_platform ALL=(ALL:ALL) NOPASSWD:OPERATORS
+' > /etc/sudoers
+cat /etc/sudoers
+}
+
+Install_docker()
+{
+echo " - docker install"
+apt-get -y install apt-transport-https ca-certificates curl software-properties-common
+curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -
+apt-key fingerprint 0EBFCD88
+add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+apt-get -y update
+apt-get -y install docker-ce
+
+apt-get -y remove docker-compose
+apt-get -y remove golang-docker-credential-helpers
+curl -fsSL "https://github.com/docker/compose/releases/download/1.23.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+/usr/local/bin/docker-compose --version
+}
+
+Setup_Audit()
+{
+echo " - Ensure auditing is configured for various Docker files"
+echo '# --- START --- #
+-D
+-b 320
+-w /usr/bin/docker -p wa
+-w /var/lib/docker -p wa
+-w /etc/docker -p wa
+-w /lib/systemd/system/docker.service -p wa
+-w /lib/systemd/system/docker.socket -p wa
+-w /etc/default/docker -p wa
+-w /etc/docker/daemon.json -p wa
+-w /usr/bin/docker-containerd -p wa
+-w /usr/bin/docker-runc -p wa
+# --- END --- #' > /etc/audit/audit.rules
+cat /etc/audit/audit.rules
+
+## For 18.04
+cp /usr/share/doc/auditd/examples/rules/30-pci-dss-v31.rules.gz /etc/audit/
+gzip -d /etc/audit/30-pci-dss-v31.rules.gz
+cp -f /etc/audit/30-pci-dss-v31.rules /etc/audit/audit.rules
+
+systemctl restart auditd.service
+systemctl status auditd.service
+auditctl -l
+
+echo "local0.* /var/log/command.log" >> /etc/rsyslog.d/50-default.conf
+systemctl restart rsyslog & systemctl status rsyslog
+
+# add the following line into /etc/bash.bashrc
+# PROMPT_COMMAND='history -a; { command=$(history 1 | { read x y; echo $y; }); [ "$SSH_CLIENT" ] || SSH_CLIENT=$SUDO_USER; [ "$SSH_CLIENT" ] || SSH_CLIENT='sudo'; logger -p local0.notice -t history -i "date=$(date +%Y\/%m\/%d\-%T), user=$USER, from=$SSH_CLIENT, pwd=$PWD, command=$command"; }'
+cat /tmp/bashrc_add >> /etc/bash.bashrc
+
+}
+
+Setup_docker()
+{
+echo " - add users to docker group."
+usermod -aG docker david
+usermod -aG docker tony
+usermod -aG docker zach
+usermod -aG docker relk
+#usermod -aG docker tommy
+usermod -aG docker andy
+usermod -aG docker andyhuang
+
+echo " - Correcting Docker Daemon Configuration Warnings"
+echo '{
+    "icc": false,
+    "userns-remap": "default",
+    "log-driver": "json-file",
+    "log-opts": {
+    "max-size": "10m",
+    "max-file": "10"
+    },
+    "disable-legacy-registry": true,
+    "live-restore": true,
+    "userland-proxy": false,
+    "no-new-privileges": true
+}' > /etc/docker/daemon.json
+
+cat /etc/docker/daemon.json
+systemctl daemon-reload && systemctl restart docker && systemctl status docker
+
+echo " - Enable Content Trust"
+echo "DOCKER_CONTENT_TRUST=1" | tee -a /etc/environment
+}
+
+Check_security()
+{
+echo " - Check all security about docker"
+docker run -it --net host --pid host --userns host --cap-add audit_control \
+    -e DOCKER_CONTENT_TRUST=$DOCKER_CONTENT_TRUST \
+    -v /var/lib:/var/lib \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v /usr/lib/systemd:/usr/lib/systemd \
+    -v /etc:/etc --label docker_bench_security \
+    docker/docker-bench-security
+}
+
+Setup_filebeat()
+{
+### Install filebeat
+wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | apt-key add -
+apt-get -y install apt-transport-https
+echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | tee -a /etc/apt/sources.list.d/elastic-7.x.list
+apt-get -y update && apt-get -y install filebeat
+update-rc.d filebeat defaults 95 10
+filebeat modules enable auditd system osquery nginx traefik
+filebeat modules list
+
+cp /etc/filebeat/filebeat.yml /etc/filebeat/filebeat.yml_orig
+sed -i 's|localhost:9200|search-funpodium-rtma4rwnd2agudg7jdgozlpoj4.ap-northeast-1.es.amazonaws.com:443|g' /etc/filebeat/filebeat.yml
+
+service filebeat start
+service filebeat stop
+update-rc.d filebeat disable
+# waitting for logstash or es auth.
+}
+
+Update_Packages
+Setup_sysstat
+Setup_supervisor
+Setup_TimeZone
+Setup_Users
+Install_docker
+Setup_Audit
+Setup_docker
+#Check_security
+#Setup_filebeat
+# --- END --- #

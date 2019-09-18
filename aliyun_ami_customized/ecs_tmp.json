@@ -1,0 +1,48 @@
+{
+  "variables": {
+    "access_key": "{{env `ALICLOUD_ACCESS_KEY`}}",
+    "secret_key": "{{env `ALICLOUD_SECRET_KEY`}}"
+  },
+  "builders": [{
+    "type":"alicloud-ecs",
+    "access_key":"{{user `access_key`}}",
+    "secret_key":"{{user `secret_key`}}",
+    "region":"cn-shenzhen",
+    "image_name":"docker-ubuntu-{{timestamp}}",
+    "source_image":"ubuntu_18_04_64_20G_alibase_20190624.vhd",
+    "ssh_username":"root",
+    "instance_type":"ecs.c5.large",
+    "io_optimized":"true",
+    "internet_charge_type":"PayByTraffic",
+    "image_force_delete":"true",
+    "tags" : {
+                "Name" : "docker-ubuntu-{{isotime}}",
+                "OS_Version": "Ubuntu Server 18.04 LTS Type Linux",
+                "Release": "{{isotime}}",
+                "Runner": "ECS",
+                "Tool" : "Packer",
+                "Author" : "David",
+                "Brand" : "JBO-Alipay",
+                "Env" : "Production",
+                "Owner" : "David"
+             }
+  }],
+  "provisioners": [
+        {
+            "type": "file",
+            "source": "./ssh",
+            "destination": "/home/ubuntu/"
+        },
+        {
+            "type": "file",
+            "source": "./bashrc_add",
+            "destination": "/home/ubuntu/"
+        },
+        {
+            "type" : "shell",
+            "script" : "./setup.sh",
+            "execute_command" : "sudo -E -S bash '{{ .Path }}'",
+            "valid_exit_codes" : "0"
+        }
+  ]
+}

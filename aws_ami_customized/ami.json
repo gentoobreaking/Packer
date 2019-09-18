@@ -1,0 +1,45 @@
+{
+    "variables" : {
+        "region" : "ap-northeast-1"
+    },
+    "builders" : [
+        {
+            "type" : "amazon-ebs",
+            "profile" : "default",
+            "region" : "{{user `region`}}",
+            "instance_type" : "t2.micro",
+            "source_ami" : "ami-07ad4b1c3af1ea214",
+            "ssh_username" : "ubuntu",
+            "ami_name" : "docker-ubuntu-{{timestamp}}",
+            "ami_description" : "The AMI image have be builded with packer. this version is writed by David.",
+	    "communicator": "ssh",
+	    "ami_users": ["8919956171xx","5842899666xx"],
+            "run_tags" : {
+                "Name" : "docker-ubuntu-{{isotime  | clean_ami_name}}",
+		"OS_Version": "Ubuntu Server 18.04 LTS (HVM), SSD Volume Type Linux",
+                "Release": "{{isotime  | clean_ami_name}}",
+                "Runner": "EC2",
+                "Tool" : "Packer",
+                "Author" : "David"
+            }
+        }
+    ],
+    "provisioners" : [
+	{
+	    "type": "file",
+	    "source": "./ssh",
+	    "destination": "/tmp/"
+	},
+	{
+            "type": "file",
+            "source": "./bashrc_add",
+            "destination": "/tmp/"
+        },
+        {
+            "type" : "shell",
+            "script" : "./setup.sh",
+            "execute_command" : "sudo -E -S bash '{{ .Path }}'",
+	    "valid_exit_codes" : "0"
+        }
+    ]
+}

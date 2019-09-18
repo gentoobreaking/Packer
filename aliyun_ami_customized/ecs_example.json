@@ -1,0 +1,25 @@
+{
+  "variables": {
+    "access_key": "{{env `ALICLOUD_ACCESS_KEY`}}",
+    "secret_key": "{{env `ALICLOUD_SECRET_KEY`}}"
+  },
+  "builders": [{
+    "type":"alicloud-ecs",
+    "access_key":"{{user `access_key`}}",
+    "secret_key":"{{user `secret_key`}}",
+    "region":"cn-beijing",
+    "image_name":"packer_test2",
+    "source_image":"centos_7_04_64_20G_alibase_201701015.vhd",
+    "ssh_username":"root",
+    "instance_type":"ecs.n1.tiny",
+    "io_optimized":"true",
+    "image_force_delete":"true"
+  }],
+  "provisioners": [{
+    "type": "shell",
+    "inline": [
+      "sleep 30",
+      "yum install redis.x86_64 -y"
+    ]
+  }]
+}
